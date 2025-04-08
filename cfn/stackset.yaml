@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS Resource Explorer Onboarding
+
+Parameters:
+  MainRegion:
+    Type: String
+    Description: Resource Explorer Main Region
+  OrgDelegatedAdminAccount:
+    Type: String
+    Description: Resource Explorer Delegated Admin Account ID
+  OrgID:
+    Type: String
+    Description: The AWS Organization ID
+  ManagementAccountID:
+    Type: String
+    Description: The AWS Management Account ID
+  
+Conditions:
+  IsMainRegion: !Equals
+    - !Ref MainRegion
+    - !Ref AWS::Region
+  IsOrgDelegatedAdminAccount: !Equals
+    - !Ref OrgDelegatedAdminAccount
+    - !Ref AWS::AccountId
+  CreateOrgLevelView: !And
+    - !Condition IsMainRegion
+    - !Condition IsOrgDelegatedAdminAccount
+
+Resources:
+  Index:
+    Type: AWS::ResourceExplorer2::Index
+    Properties:
+      Type: !If
+        - IsMainRegion
+        - AGGREGATOR
+        - LOCAL
+
+  View:
+    Condition: IsMainRegion
+    Type: AWS::ResourceExplorer2::View
+    Properties:
+      ViewName: MainView
+      IncludedProperties:
+        - Name: tags
+    DependsOn: Index
+
+  DefaultViewAssociation:
+    Condition: IsMainRegion
+    Type: AWS::ResourceExplorer2::DefaultViewAssociation
+    Properties:
+      ViewArn: !Ref View
+
+  OrgLevelView:
+    Condition: CreateOrgLevelView
+    Type: AWS::ResourceExplorer2::View
+    Properties:
+      ViewName: OrganizationView
+      Scope: !Sub "arn:aws:organizations::${ManagementAccountID}:organization/${OrgID}"
+      IncludedProperties:
+        - Name: tags
+    DependsOn: Index
+
+Outputs:
+  OrgLevelViewArn:
+    Description: ARN of the Resource Explorer organization level view
+    Value: !If
+      - CreateOrgLevelView
+      - !Ref OrgLevelView
+      - !Ref "AWS::NoValue"
