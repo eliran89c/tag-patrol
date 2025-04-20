@@ -34,7 +34,7 @@ jobs:
             exit 1
           fi
 
-  unit_tests:
+  tests:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
@@ -52,5 +52,9 @@ jobs:
       - name: Build code
         run: go build -v ./...
 
-      - name: Running unit tests
+      - name: Run unit tests
         run: go test -v ./...
+
+      - name: Run integration tests (Linux only)
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -tags=integration ./integration
