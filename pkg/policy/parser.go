@@ -46,11 +46,17 @@ func (p *DefaultParser) ParseReader(reader io.Reader) ([]*types.ResourceDefiniti
 		return nil, fmt.Errorf("failed to decode YAML: %w", err)
 	}
 
-	if err := ValidatePolicy(&policy); err != nil {
+	return p.ParsePolicy(&policy)
+
+}
+
+// ParsePolicy validates and processes a Policy into ResourceDefinitions
+func (p *DefaultParser) ParsePolicy(policy *ptypes.Policy) ([]*ptypes.ResourceDefinition, error) {
+	if err := ValidatePolicy(policy); err != nil {
 		return nil, fmt.Errorf("failed to validate policy: %w", err)
 	}
 
-	return p.ProcessPolicy(&policy)
+	return p.ProcessPolicy(policy)
 }
 
 // ProcessPolicy converts a Policy into a list of ResourceDefinitions
