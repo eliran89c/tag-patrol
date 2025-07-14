@@ -117,6 +117,14 @@ func (m *MockParser) ParseBytes(data []byte) ([]*types.ResourceDefinition, error
 	return args.Get(0).([]*types.ResourceDefinition), args.Error(1)
 }
 
+func (m *MockParser) ParsePolicy(policy *types.Policy) ([]*types.ResourceDefinition, error) {
+	args := m.Called(policy)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]*types.ResourceDefinition), args.Error(1)
+}
+
 type MockRuler struct {
 	mock.Mock
 }
@@ -288,6 +296,106 @@ func TestRunFromBytes(t *testing.T) {
 	mockParser.AssertExpectations(t)
 	mockFinder.AssertExpectations(t)
 	mockRuler.AssertExpectations(t)
+}
+
+func TestRunFromPolicy(t *testing.T) {
+	ctx := context.Background()
+	mockParser := new(MockParser)
+	mockFinder := new(MockFinder)
+	mockRuler := new(MockRuler)
+
+	patrol := &Patrol{
+		Parser:         mockParser,
+		ResourceFinder: mockFinder,
+		Ruler:          mockRuler,
+		Options:        DefaultOptions(),
+	}
+
+	policy := &types.Policy{
+		Resources: map[string]map[string]*types.ResourceConfig{
+			"ec2": {
+				"instance": {
+					TagPolicy: &types.TagPolicy{
+						MandatoryKeys: []string{"name", "environment"},
+					},
+				},
+			},
+		},
+	}
+
+	resourceDef := &types.ResourceDefinition{
+		Service:      "ec2",
+		ResourceType: "instance",
+		TagPolicy: &types.TagPolicy{
+			MandatoryKeys: []string{"name", "environment"},
+		},
+	}
+
+	resource := NewMockResource(
+		"i-12345678",
+		"instance",
+		"ec2",
+		"aws",
+		"us-west-2",
+		"123456789012",
+		map[string]string{"name": "test", "environment": "prod"},
+	)
+
+	resources := []cr.CloudResource{resource}
+
+	mockParser.On("ParsePolicy", policy).Return([]*types.ResourceDefinition{resourceDef}, nil)
+	mockFinder.On("FindResources", ctx, "ec2", "instance").Return(resources, nil)
+	mockRuler.On("ValidateAll", resources, resourceDef.TagPolicy).Return(1, 0)
+
+	results, err := patrol.RunFromPolicy(ctx, policy)
+
+	assert.NoError(t, err)
+	assert.Len(t, results, 1)
+
+	result := results[0]
+	assert.Equal(t, resourceDef, result.Definition)
+	assert.Equal(t, resources, result.Resources)
+	assert.Equal(t, 1, result.CompliantCount)
+	assert.Equal(t, 0, result.NonCompliantCount)
+	assert.Nil(t, result.Error)
+
+	mockParser.AssertExpectations(t)
+	mockFinder.AssertExpectations(t)
+	mockRuler.AssertExpectations(t)
+}
+
+func TestRunFromPolicyWithParseError(t *testing.T) {
+	ctx := context.Background()
+	mockParser := new(MockParser)
+	mockFinder := new(MockFinder)
+	mockRuler := new(MockRuler)
+
+	patrol := &Patrol{
+		Parser:         mockParser,
+		ResourceFinder: mockFinder,
+		Ruler:          mockRuler,
+		Options:        DefaultOptions(),
+	}
+
+	policy := &types.Policy{
+		Resources: map[string]map[string]*types.ResourceConfig{
+			"ec2": {
+				"instance": nil,
+			},
+		},
+	}
+
+	expectedErr := errors.New("policy parsing error")
+	mockParser.On("ParsePolicy", policy).Return(nil, expectedErr)
+
+	results, err := patrol.RunFromPolicy(ctx, policy)
+
+	assert.Error(t, err)
+	assert.Nil(t, results)
+	assert.Contains(t, err.Error(), "error parsing policy")
+	assert.Contains(t, err.Error(), expectedErr.Error())
+
+	mockParser.AssertExpectations(t)
 }
 
 func TestRunWithSingleDefinition(t *testing.T) {

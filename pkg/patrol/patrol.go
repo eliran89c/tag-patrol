@@ -52,6 +52,7 @@ type Ruler interface {
 type Parser interface {
 	ParseFile(path string) ([]*ptypes.ResourceDefinition, error)
 	ParseBytes(data []byte) ([]*ptypes.ResourceDefinition, error)
+	ParsePolicy(policy *ptypes.Policy) ([]*ptypes.ResourceDefinition, error)
 }
 
 // Finder defines the interface for finding cloud resources
@@ -90,6 +91,15 @@ func (p *Patrol) RunFromBytes(ctx context.Context, policyContent []byte) ([]Resu
 		return nil, fmt.Errorf("error parsing policy content: %w", err)
 	}
 
+	return p.Run(ctx, rdefs)
+}
+
+// RunFromPolicy loads a policy from a Policy object and runs the patrol
+func (p *Patrol) RunFromPolicy(ctx context.Context, policy *ptypes.Policy) ([]Result, error) {
+	rdefs, err := p.Parser.ParsePolicy(policy)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing policy: %w", err)
+	}
 	return p.Run(ctx, rdefs)
 }
 

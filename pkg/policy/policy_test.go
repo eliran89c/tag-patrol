@@ -754,3 +754,104 @@ func TestProcessEmptyResources(t *testing.T) {
 	assert.Error(t, err, "Nil resources should cause a validation error")
 	assert.Contains(t, err.Error(), "required")
 }
+
+func TestParsePolicy(t *testing.T) {
+	parser := NewParser()
+
+	t.Run("Valid Policy", func(t *testing.T) {
+		policy := &types.Policy{
+			Resources: map[string]map[string]*types.ResourceConfig{
+				"ec2": {
+					"instance": {
+						TagPolicy: &types.TagPolicy{
+							MandatoryKeys: []string{"name", "environment"},
+							Validations: map[string]*types.Validation{
+								"environment": {
+									Type:          types.TagTypeString,
+									AllowedValues: []string{"prod", "staging", "dev"},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		definitions, err := parser.ParsePolicy(policy)
+		assert.NoError(t, err)
+		assert.Len(t, definitions, 1)
+
+		def := definitions[0]
+		assert.Equal(t, "ec2", def.Service)
+		assert.Equal(t, "instance", def.ResourceType)
+		assert.Len(t, def.MandatoryKeys, 2)
+		assert.Contains(t, def.MandatoryKeys, "name")
+		assert.Contains(t, def.MandatoryKeys, "environment")
+		assert.Len(t, def.Validations, 1)
+		assert.Contains(t, def.Validations, "environment")
+	})
+
+	t.Run("Invalid Policy", func(t *testing.T) {
+		policy := &types.Policy{
+			Resources: map[string]map[string]*types.ResourceConfig{
+				"ec2": {
+					"instance": {
+						TagPolicy: &types.TagPolicy{
+							Validations: map[string]*types.Validation{
+								"test": {
+									Type: "invalid_type",
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		definitions, err := parser.ParsePolicy(policy)
+		assert.Error(t, err)
+		assert.Nil(t, definitions)
+		assert.Contains(t, err.Error(), "failed to validate policy")
+	})
+
+	t.Run("Policy with Blueprint Extension", func(t *testing.T) {
+		policy := &types.Policy{
+			Blueprints: map[string]*types.Blueprint{
+				"base": {
+					TagPolicy: &types.TagPolicy{
+						MandatoryKeys: []string{"environment"},
+						Validations: map[string]*types.Validation{
+							"environment": {
+								Type:          types.TagTypeString,
+								AllowedValues: []string{"prod", "staging", "dev"},
+							},
+						},
+					},
+				},
+			},
+			Resources: map[string]map[string]*types.ResourceConfig{
+				"ec2": {
+					"instance": {
+						TagPolicy: &types.TagPolicy{
+							MandatoryKeys: []string{"name"},
+						},
+						Extends: []string{"blueprints.base"},
+					},
+				},
+			},
+		}
+
+		definitions, err := parser.ParsePolicy(policy)
+		assert.NoError(t, err)
+		assert.Len(t, definitions, 1)
+
+		def := definitions[0]
+		assert.Equal(t, "ec2", def.Service)
+		assert.Equal(t, "instance", def.ResourceType)
+		assert.Len(t, def.MandatoryKeys, 2)
+		assert.Contains(t, def.MandatoryKeys, "name")
+		assert.Contains(t, def.MandatoryKeys, "environment")
+		assert.Len(t, def.Validations, 1)
+		assert.Contains(t, def.Validations, "environment")
+	})
+}
